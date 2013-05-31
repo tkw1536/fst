@@ -17,14 +17,14 @@ def walk_up(bottom):
  
     dirs, nondirs = [], []
     for name in names:
-        if os.path.isdir(path.join(bottom, name)):
+        if os.path.isdir(os.path.join(bottom, name)):
             dirs.append(name)
         else:
             nondirs.append(name)
  
     yield bottom, dirs, nondirs
  
-    new_path = os.path.realpath(path.join(bottom, '..'))
+    new_path = os.path.realpath(os.path.join(bottom, '..'))
     
     # see if we are at the top
     if new_path == bottom:
@@ -126,7 +126,7 @@ fst target
 fst user
 fst which
 
-Type 'fst help <TOPIC>' for more information. """));
+Type 'fst help $TOPIC' for more information. """));
     
 def conf_get(set, default=None):
     try:
@@ -224,106 +224,105 @@ bye"""
     call(["lftp", "-e", command])
     os.chdir(spth)
 
+def config_option(params, option, default=None):
+    try:
+        conf_set(option, params[1])
+        print "'"+option+"' = '"+params[1]+"'"
+    except:
+       print conf_get(option, default)
+       sys.exit(1) 
 
-params = sys.argv[1:]
-if len(params) > 0:
-    oper = params[0]
-    if oper == "user":
-        try:
-            conf_set("user", params[1])
-            print "'user' = '"+params[1]+"'"
-        except:
-           print conf_get("user")
-           sys.exit(1)
-    elif oper == "host":
-        try:
-            conf_set("host", params[1])
-            print "'host' = '"+params[1]+"'"
-        except:
-           print conf_get("host")
-           sys.exit(1) 
-    elif oper == "rcd":
-        try:
-            conf_set("rcd", params[1])
-            print "'rcd' = '"+params[1]+"'"
-        except:
-           print conf_get("rcd", "")
-           sys.exit(1)
-    elif oper == "fork":
-        try:
-            shutil.copy(cpath, os.path.join(os.getcwd(), ".fstconfig"))
-        except shutil.Error:
-            print "Can't fork: Config already in CD. "
-            sys.exit(1)
-        except IOError:
-            print "Can't fork: Nothing to fork. "
-            pass
-        rcd = os.path.join(conf_get("rcd", ""), os.path.relpath(os.path.abspath(os.getcwd()), homedir))
-        # Update all the directories
-        homedir = os.getcwd()
-        cpath = os.path.join(homedir, ".fstconfig")
-        #Update settings
-        conf_set("rcd", rcd)
-        print "Forked, 'rcd' = '"+rcd+"'"
-    elif oper == "clear":
-        try:
-            os.remove(cpath)
-            print "config cleared. "
-        except OSError:
-            print "Can't clear config (Empty config?)"
-            sys.exit(1)
-    elif oper == "target":
-        try:
-            set_target(params[1], params[2])
-            print "'target'['"+params[1]+"'] = '"+params[2]+"'"
-        except:
-            print "Missing parameter(s). "
-    elif oper == "rm":
-        try:
-            rm_target(params[1])
-            print "deleted 'target'['"+params[1]+"']"
-        except:
-            print "Missing parameter(s). "
-    elif oper == "pull":
-        try:
-            pull_dir(get_target(params[1]))
-        except:
-            pull_dir(".")
-    elif oper == "push":
-        try:
-            push_dir(get_target(params[1]))
-        except:
-            push_dir(".")
-    elif oper == "pulldir":
-        try:
-            pull_dir(os.path.relpath(os.path.abspath(params[1]), homedir))
-        except:
-            pull_dir(os.path.relpath(".", homedir))
-    elif oper == "pushdir":
-        try:
-            push_dir(os.path.relpath(os.path.abspath(params[1]), homedir))
-        except:
-            push_dir(os.path.relpath(".", homedir))
-        
-    elif oper == "which":
-        try:
-            print get_target(params[1])
-        except:
-            for key in conf_get("targets", []):
-                print key
-    elif oper == "status":
-        print homedir
-    elif oper == "pwd":
-        print os.path.relpath(os.path.abspath(os.getcwd()), homedir)
-    elif oper == "help":
-        try:
-            help(params[1])
-        except:
-            help("")
-    elif oper == "about":
-        print "fst - FTP File Sync Tool"
-        print "(c) Tom Wiesing 2013"
+def main(params):
+    if len(params) > 0:
+        oper = params[0]
+        if oper == "user":
+            config_option(params, "user")
+        elif oper == "host":
+            config_option(params, "host")
+        elif oper == "rcd":
+            config_option(params, "rcd", "")
+        elif oper == "fork":
+            try:
+                shutil.copy(cpath, os.path.join(os.getcwd(), ".fstconfig"))
+            except shutil.Error:
+                print "Can't fork: Config already in CD. "
+                sys.exit(1)
+            except IOError:
+                print "Can't fork: Nothing to fork. "
+                pass
+            rcd = os.path.join(conf_get("rcd", ""), os.path.relpath(os.path.abspath(os.getcwd()), homedir))
+            # Update all the directories
+            homedir = os.getcwd()
+            cpath = os.path.join(homedir, ".fstconfig")
+            #Update settings
+            conf_set("rcd", rcd)
+            print "Forked, 'rcd' = '"+rcd+"'"
+        elif oper == "clear":
+            try:
+                os.remove(cpath)
+                print "config cleared. "
+            except OSError:
+                print "Can't clear config (Empty config?)"
+                sys.exit(1)
+        elif oper == "target":
+            try:
+                set_target(params[1], params[2])
+                print "'target'['"+params[1]+"'] = '"+params[2]+"'"
+            except:
+                print "Missing parameter(s). "
+        elif oper == "rm":
+            try:
+                rm_target(params[1])
+                print "deleted 'target'['"+params[1]+"']"
+            except:
+                print "Missing parameter(s). "
+        elif oper == "pull":
+            try:
+                pull_dir(get_target(params[1]))
+            except:
+                pull_dir(".")
+        elif oper == "push":
+            try:
+                push_dir(get_target(params[1]))
+            except:
+                push_dir(".")
+        elif oper == "pulldir":
+            try:
+                pull_dir(os.path.relpath(os.path.abspath(params[1]), homedir))
+            except:
+                pull_dir(os.path.relpath(".", homedir))
+        elif oper == "pushdir":
+            try:
+                push_dir(os.path.relpath(os.path.abspath(params[1]), homedir))
+            except:
+                push_dir(os.path.relpath(".", homedir))
+            
+        elif oper == "which":
+            try:
+                print get_target(params[1])
+            except:
+                for key in conf_get("targets", []):
+                    print key
+        elif oper == "status":
+            print homedir
+        elif oper == "pwd":
+            print os.path.relpath(os.path.abspath(os.getcwd()), homedir)
+        elif oper == "help":
+            try:
+                help(params[1])
+            except:
+                help("")
+        elif oper == "about":
+            print "fst - FTP File Sync Tool"
+            print "(c) Tom Wiesing 2013"
+        else:
+            print "Unknown Command"
     else:
-        print "Unknown Command"
-else:
-    print "Missing command. See 'fst help'. "
+        print "Missing command. See 'fst help'. "
+    
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except KeyboardInterrupt:
+        print "Error: KeyboardInterrupt"
+        sys.exit(1)
