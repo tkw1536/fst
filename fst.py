@@ -33,14 +33,16 @@ def walk_up(bottom):
     for x in walk_up(new_path):
         yield x
 
-homedir = os.getcwd()
 
-for c,d,f in walk_up(os.getcwd()):
+def init_path():
+    global homedir
+    global cpath
+    homedir = os.getcwd()
+    for c,d,f in walk_up(os.getcwd()):
         if '.fstconfig' in f:
             homedir = c
             break
-
-cpath = os.path.join(homedir, ".fstconfig")
+    cpath = os.path.join(homedir, ".fstconfig")
 
 
 def help(what):
@@ -129,18 +131,20 @@ fst which
 Type 'fst help $TOPIC' for more information. """));
     
 def conf_get(set, default=None):
+    global homedir, cpath
     try:
         config = ConfigParser.SafeConfigParser()
         config.read(cpath)
         return json.loads(config.get('fst', set))
     except:
         if(default == None):
-            print "Missing config: "+set
+            print "Missing config: '"+set+"'"
             sys.exit(1)
         else:
             return default
 
 def conf_set(set, val):
+    global homedir, cpath
     config = ConfigParser.SafeConfigParser()
     try:    
         config.read(cpath)
@@ -159,6 +163,7 @@ def conf_set(set, val):
         sys.exit(1)
 
 def conf_del(set):
+    global homedir, cpath
     config = ConfigParser.SafeConfigParser()
     try:    
         config.read(cpath)
@@ -177,6 +182,7 @@ def conf_del(set):
         sys.exit(1)
         
 def set_target(target, dir):
+    global homedir, cpath
     list = conf_get("targets", [])
     if not target in list:
         list.append(target)
@@ -184,6 +190,7 @@ def set_target(target, dir):
     conf_set("target_"+target, os.path.relpath(os.path.abspath(dir), homedir))
 
 def rm_target(target):
+    global homedir, cpath
     list = conf_get("targets", [])
     if target in list:
         list.remove(target)
@@ -191,11 +198,13 @@ def rm_target(target):
     conf_del("target_"+target)
 
 def get_target(target):
+    global homedir, cpath
     return conf_get("target_"+target)
 
 def get_rcd():
     return conf_get("rcd", "")
 def pull_dir(dir):
+    global homedir, cpath
     spth = os.getcwd()
     os.chdir(homedir)
     dir = os.path.relpath(os.path.abspath(dir), homedir)
@@ -211,6 +220,7 @@ bye"""
     os.chdir(spth)
     
 def push_dir(dir):
+    global homedir, cpath
     spth = os.getcwd()
     os.chdir(homedir)
     host = conf_get("host")
@@ -233,6 +243,7 @@ def config_option(params, option, default=None):
        sys.exit(1) 
 
 def main(params):
+    global homedir, cpath
     if len(params) > 0:
         oper = params[0]
         if oper == "user":
@@ -321,6 +332,7 @@ def main(params):
         print "Missing command. See 'fst help'. "
     
 if __name__ == '__main__':
+    init_path()
     try:
         main(sys.argv[1:])
     except KeyboardInterrupt:
