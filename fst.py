@@ -245,7 +245,7 @@ def get_target(target):
     if target in targets:
         return os.path.join(homedir, targets[target])
     elif target == "master":
-        return get_pwd()
+        return homedir
     else:
         die("Can't find target '"+target+"' in targets. ")
 # Get Remote CD (base)
@@ -295,6 +295,7 @@ def push_dir(dir):
     global homedir, cpath
     spth = os.getcwd()
     os.chdir(homedir)
+    dir = os.path.relpath(os.path.abspath(dir), homedir)
     host = conf_get("host")
     user = conf_get("user")
 
@@ -415,8 +416,7 @@ include
 pull
 pulldir
 push
-pushdir 
-pwd
+pushdir !
 rcd
 status
 target
@@ -482,13 +482,6 @@ def cmd_include(*params):
     global homedir, cpath, quiet
     config_array_option(params, "include_file", map=re.escape)
 
-# Pull Command
-def cmd_pull(target, *args):
-    global homedir, cpath, quiet
-    try:
-        pull_dir(get_target(params[0]))
-    except:
-        pull_dir(".")
 
 # Target Command
 def cmd_target(*params):
@@ -509,7 +502,7 @@ def cmd_pulldir(*params):
     try:
         pull_dir(os.path.relpath(os.path.abspath(params[0]), homedir))
     except IndexError:
-        pull_dir(os.path.relpath(".", homedir))
+        pull_dir(get_pwd())
 
 # Push Command
 def cmd_push(*params): 
@@ -525,7 +518,7 @@ def cmd_pushdir(*params):
     try:
         push_dir(os.path.relpath(os.path.abspath(params[0]), homedir))
     except IndexError:
-        push_dir(os.path.relpath(".", homedir))
+        push_dir(get_pwd())
 
 # pwd Command
 def cmd_pwd(*params):
