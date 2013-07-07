@@ -1,10 +1,15 @@
 #!/usr/bin/env python
 
-import sys, ConfigParser, os, json, shutil
+import sys, ConfigParser, os, json, shutil, re
 from subprocess import call
 
-#from: https://gist.github.com/zdavkeos/1098474
+#
+# Utility Functions
+#
+
+# Walk up the directory tree
 def walk_up(bottom):
+    #from: https://gist.github.com/zdavkeos/1098474
     bottom = os.path.realpath(bottom)
  
     #get files in current dir
@@ -33,7 +38,40 @@ def walk_up(bottom):
     for x in walk_up(new_path):
         yield x
 
+#
+# Messages
+#
 
+def dump_error(msg = ""):
+    global quiet
+    if not quiet:
+        sys.stderr.write("** FST ERROR ** "+ msg + "\n")
+
+def dump_message(msg = ""):
+    global quiet
+    if not quiet:
+        sys.stdout.write( msg + "\n")
+
+def die(msg = ""):
+    global quiet
+    if not quiet:
+        sys.stderr.write("** FATAL FST ERROR ** "+ msg + "\n")
+    sys.exit(1)
+
+def dump_simu(msg):
+    global simulate
+    if simulate:
+        dump_message("** SIMULATE ** "+ msg)
+        return True
+    else:
+        return False
+
+
+#
+# Initialisation
+#
+
+# Initialise the current working dir (path)
 def init_path():
     global homedir
     global cpath
@@ -44,9 +82,247 @@ def init_path():
             break
     cpath = os.path.join(homedir, ".fstconfig")
 
+#
+# Configuration
+#
 
-def help(what):
-    
+# Get a configuration
+def conf_get(set, default=None):
+    global homedir, cpath
+    try:
+        config = ConfigParser.SafeConfigParser()
+        config.read(cpath)
+        return json.loads(config.get('fst', set))
+    except:
+        if(default == None):
+            die("Missing config: '"+set+"'")
+        else:
+            return default
+
+# Set a configuration
+def conf_set(set, val):
+    global homedir, cpath
+    config = ConfigParser.SafeConfigParser()
+    try:    
+        config.read(cpath)
+    except:
+        pass
+    try:
+        config.add_section('fst')
+    except:
+        pass
+    config.set('fst', set, json.dumps(val))
+    try:
+        with open(cpath, 'w') as configfile:    # save
+            config.write(configfile)
+    except:
+        die("Can't store config. ")
+
+#delete a configuration setting
+def conf_del(set):
+    global homedir, cpath
+    config = ConfigParser.SafeConfigParser()
+    try:    
+        config.read(cpath)
+    except:
+        pass
+    try:
+        config.add_section('fst')
+    except:
+        pass
+    config.remove_option('fst', set)
+    try:
+        with open(cpath, 'w') as configfile:    # save
+            config.write(configfile)
+    except:
+        die("Can't remove config: "+set)
+        sys.exit(1)
+
+#Configuration option parser
+def config_option(params, option, default=None, map=lambda x:x, unmap=lambda x: x):
+    try:
+        conf_set(option, map(params[0]))
+        dump_message("'"+option+"' = '"+params[0]+"'")
+    except:
+       dump_message(unmap(conf_get(option, default)))
+
+#Array Configuration option parser
+def config_array_option(params, option, map=lambda x: x, unmap=lambda x: x, default=[]):
+    if(len(params)>0):
+        if(params[0] == "list"):
+            config_array_option_dump(option, unmap, default)
+        elif (params[0] == "rm"): 
+            config_array_option_remove(option, params[1:], map, default)
+        elif (params[0] == "add"):
+            config_array_option_add(option, params[1:], map, default)
+        else:
+            die("Wrong parameter(s) for option '"+ option +"'")
+    else:
+        config_array_option_dump(option, unmap, default)
+
+def config_array_option_add(option, adds, map=lambda x: x, default=[]): 
+    old = conf_get(option, default)
+    for value in adds: 
+        newval = map(value)
+        if not newval in old:
+            old.append(newval)
+            dump_message(option+".push('"+value+"')")
+        else:
+            dump_error("'"+value+"' already in '"+option+"', add failed")
+    conf_set(option, old)
+
+def config_array_option_remove(option, removes, map=lambda x: x, default=[]): 
+    old = conf_get(option, default)
+    for value in removes: 
+        newval = map(value)
+        if newval in old:
+            old.remove(newval)
+            dump_message(option+".pop('"+value+"')")
+        else:
+            dump_error("'"+value+"' not in '"+option+"', remove failed")
+    if(len(removes) == 0):
+        old = []
+    conf_set(option, old)
+
+def config_array_option_dump(option, unmap=lambda x: x, default=[]): 
+    for value in conf_get(option, default):
+        dump_message(unmap(value))
+
+def config_map_option(params, option, map=lambda x: x, unmap=lambda x: x, default={}):
+    if(len(params)>0):
+        if(params[0] == "list" or params[0] == "get"):
+            if(len(params) > 1):
+                config_map_option_dump(option, unmap, default, params[1])
+            else:
+                config_map_option_dump(option, unmap, default)
+        elif (params[0] == "rm" or params[0] == "delete" or params[0] == "del"): 
+            config_array_option_remove(option, params[1:], default)
+        elif (params[0] == "add" or params[0] == "set"):
+            if(len(params) > 2):
+                config_map_option_add(option, params[1], params[2], map, default)
+            else:
+                die("Wrong parameter(s) for option '"+ option +"'")
+        else:
+            die("Wrong parameter(s) for option '"+ option +"'")
+    else:
+        config_map_option_dump(option, unmap, default)
+
+def config_map_option_add(option, name, val, map=lambda x: x, default={}): 
+    old = conf_get(option, default)
+    old[name] = map(val)
+    conf_set(option, old)
+
+def config_map_option_remove(option, removes, default={}): 
+    old = conf_get(option, default)
+    for value in removes: 
+        newval = value
+        if newval in old:
+            old.pop(newval, None)
+            dump_message(option+".pop('"+value+"'')")
+        else:
+            dump_error("'"+value+"' not in '"+option+"', pop failed")
+    conf_set(option, old)
+
+def config_map_option_dump(option, unmap=lambda x: x, default={}, key=None): 
+    opt = conf_get(option, default)
+    if key == None:
+        for value in opt:
+            dump_message(unmap(opt[value]))
+    else:
+        if key in opt:
+            dump_message(unmap(opt[key]))
+        else:
+            die("Can't find '"+key+"' in '"+option+"'. ")
+#
+#   Getters
+#
+
+#Get a target if it exists
+def get_target(target):
+    global homedir
+    targets = conf_get("target", {})
+
+    if target in targets:
+        return os.path.join(homedir, targets[target])
+    elif target == "master":
+        return get_pwd()
+    else:
+        die("Can't find target '"+target+"' in targets. ")
+# Get Remote CD (base)
+def get_rcd():
+    return conf_get("rcd", "")
+
+def get_pwd():
+    global homedir
+    return os.path.relpath(os.path.abspath(os.getcwd()), homedir)
+
+
+#
+# Push / Pull Core Things
+#
+
+# Push a dir
+def pull_dir(dir):
+    global homedir, cpath
+    spth = os.getcwd()
+    os.chdir(homedir)
+    dir = os.path.relpath(os.path.abspath(dir), homedir)
+    host = conf_get("host")
+    user = conf_get("user")
+
+    fstring = ""
+    includes = conf_get("include_file", [])
+    for inc in includes:
+        fstring += "-i "+inc
+    excludes = conf_get("exclude_file", [])
+    for exc in excludes:
+        fstring += "-x "+exc
+
+    command = """
+open """+host+"""
+user """+user+"""
+lcd """+os.getcwd()+"""
+mirror --delete --verbose -x \\.fstconfig """+fstring+os.path.join(get_rcd(), dir)+""" """+dir+"""
+bye"""
+    dump_simu("Pulling a directory")
+    if(dump_simu(command)):
+        return
+    call(["lftp", "-e", command])
+    os.chdir(spth)
+
+# Pull a dir
+def push_dir(dir):
+    global homedir, cpath
+    spth = os.getcwd()
+    os.chdir(homedir)
+    host = conf_get("host")
+    user = conf_get("user")
+
+    fstring = ""
+    includes = conf_get("include_file", [])
+    for inc in includes:
+        fstring += "-i "+inc
+    excludes = conf_get("exclude_file", [])
+    for exc in excludes:
+        fstring += "-x "+exc
+
+    command = """
+open """+host+"""
+user """+user+"""
+lcd """+homedir+"""
+mirror --delete --verbose -x \\.fstconfig """+fstring+""" --reverse """+dir+""" """+os.path.join(get_rcd(), dir)+"""
+bye"""
+    dump_simu("Pushing a directory")
+    if(dump_simu(command)):
+        return
+    call(["lftp", "-e", command])
+    os.chdir(spth)
+#
+# Commands
+#
+
+# Command help
+def cmd_help(what = "", *args):
     print({
         "about": """'fst about'
 Displays about information
@@ -65,29 +341,29 @@ Sets or displays the current host for the ftp connection.
 Pulls the specefied target. 
     $TARGET    Target to pull. 
 """,
-        "pulldir": """'fst pulldir [$DIR]'
+        "pulldir": """'fst pulldir [--no-recursion] [$DIR]'
 Pulls the specefied directory, relative to the current directory. 
+    --no-recursion
+            Do not recurse into subdirectories. 
     $DIR    Directory to pull. Defaults to current directory. 
 """,
         "push": """'fst push $TARGET'
 Pushes the specefied target. 
     $TARGET    Target to push. 
 """,
-        "pushdir": """'fst pushdir [$DIR]'
+        "pushdir": """'fst pushdir [$DIR] '
 Pushes the specefied directory, relative to the current directory. 
+    --no-recursion
+            Do not recurse into subdirectories. 
     $DIR    Directory to push. Defaults to current directory. 
 """,
         "pwd": """'fst pwd'
 Prints the current directory relative to the directory root. 
 """,
-        "rm": """'fst rm $TARGET'
-Removes the specefied target. 
-    $TARGET    Target to remove. 
-""",
         "status": """'fst status'
 Prints the current directory root. 
 """,
-        "target": """'fst target $NAME $DIR'
+        "target": """'fst target [set|get|del] $NAME [$DIR]'
 Creates or updates a target. 
     $NAME   Name of target to create or update. 
     $DIR    Directory to set to relative to current directory. 
@@ -96,245 +372,215 @@ Creates or updates a target.
 Sets or displays the current username for the ftp connection. 
     $USER    Username to set. 
 """,
-        "which": """'fst which [$TARGET]'
-Displays the specefied target or prints a list of all targets. 
-    $TARGET    Name of target to show destination. 
-""",
         "rcd": """'fst rcd [$DIR]'
 Sets the remote root directory
     $DIR    Remote root directory
 """,
         "fork": """'fst fork'
 Forces a configuration file in the current directory. Automatically calls fst rcd. 
+""",
+        "include": """'fst include add|remove|list [$FILE [$FILE2 ...]]'
+Adds or removes files from the include list. 
+    $FILE   File to include or exclude
+    $FILE2  Another file 
+    ...
+""",
+        "exclude": """'fst exclude add|remove|list [$FILE [$FILE2 ...]]'
+Adds or removes files from the exclude list. 
+    $FILE   File to include or exclude
+    $FILE2  Another file 
+    ...
 """
     }.get(what, """fst - FTP File Sync Tool
 (c) Tom Wiesing 2013
+Usage: 
+
+fst [--quiet|--simulate] COMMAND [PARAMETERS]
+
+    --quiet,
+    -q          Supress any messages which do not come from lftp.   
+
+    --simulate,
+    -s          Simulate Pulling and Pushing operations. 
+
 Available commands: 
 
-fst about
-fst clear
-fst fork
-fst help
-fst host
-fst pull
-fst pulldir
-fst push
-fst pushdir 
-fst pwd
-fst rm
-fst rcd
-fst status
-fst target
-fst user
-fst which
+about
+clear
+exclude
+fork
+help
+host
+include
+pull
+pulldir
+push
+pushdir 
+pwd
+rcd
+status
+target
+user
 
-Type 'fst help $TOPIC' for more information. """));
-    
-def conf_get(set, default=None):
-    global homedir, cpath
+
+Type 'fst help COMMAND' for more information. """));
+
+# Without parameters
+def cmd_zero():
+    die("Missing operator. \n Usage: fst [--quiet|--simulate] about|clear|exclude|fork|help|host|include|pull|pulldir|push|pushdir|pwd|rcd|status|target|user")
+
+
+# Called unknown command
+def cmd_unknown(*args):
+    die("Unknown Command. \n see 'fst help' for more information")
+
+# About Command  
+def cmd_about(*args):
+    print "FST - File Sync Tool"
+    print "Version 1.0"
+    print "(c) Tom Wiesing 2013"
+
+# Clear Command
+def cmd_clear(*args):
+    global homedir, cpath, quiet
     try:
-        config = ConfigParser.SafeConfigParser()
-        config.read(cpath)
-        return json.loads(config.get('fst', set))
-    except:
-        if(default == None):
-            print "Missing config: '"+set+"'"
-            sys.exit(1)
-        else:
-            return default
+        os.remove(cpath)
+        dump_message("config cleared. ")
+    except OSError:
+        die("Can't clear config (Empty config?)")
 
-def conf_set(set, val):
-    global homedir, cpath
-    config = ConfigParser.SafeConfigParser()
-    try:    
-        config.read(cpath)
-    except:
-        pass
+# Exclude command
+def cmd_exclude(*args):
+    global homedir, cpath, quiet
+    config_array_option(params, "exclude_file", map=re.escape)
+
+# Fork Command
+def cmd_fork(*args):
+    global homedir, cpath, quiet
     try:
-        config.add_section('fst')
-    except:
-        pass
-    config.set('fst', set, json.dumps(val))
+        shutil.copy(cpath, os.path.join(os.getcwd(), ".fstconfig"))
+    except shutil.Error:
+        die("Fork failed: Config already in current directory. ")
+    except IOError:
+        die("Fork failed: Nothing to fork from. ")
+    rcd = os.path.join(conf_get("rcd", ""), os.path.relpath(os.path.abspath(os.getcwd()), homedir))
+    # Update all the directories
+    homedir = os.getcwd()
+    cpath = os.path.join(homedir, ".fstconfig")
+    #Update settings
+    conf_set("rcd", rcd)
+    dump_message("Forked, 'rcd' = '"+rcd+"'")
+
+
+# Host Command
+def cmd_host(*params):
+    global homedir, cpath, quiet
+    config_option(params, "host")
+
+# Include Command
+def cmd_include(*params):
+    global homedir, cpath, quiet
+    config_array_option(params, "include_file", map=re.escape)
+
+# Pull Command
+def cmd_pull(target, *args):
+    global homedir, cpath, quiet
     try:
-        with open(cpath, 'w') as configfile:    # save
-            config.write(configfile)
+        pull_dir(get_target(params[0]))
     except:
-        print "Can't store config. "
-        sys.exit(1)
+        pull_dir(".")
 
-def conf_del(set):
-    global homedir, cpath
-    config = ConfigParser.SafeConfigParser()
-    try:    
-        config.read(cpath)
-    except:
-        pass
+# Target Command
+def cmd_target(*params):
+    global homedir, cpath, quiet
+    config_map_option(params, "target", map=lambda x: os.path.relpath(os.path.abspath(x), homedir))
+
+# Pull Command
+def cmd_pull(*params):
+    global homedir, cpath, quiet
     try:
-        config.add_section('fst')
-    except:
-        pass
-    config.remove_option('fst', set)
+        pull_dir(get_target(params[0]))
+    except IndexError:
+        pull_dir(get_target("master"))
+
+# Pull Dir Command
+def cmd_pulldir(*params):
+    global homedir, cpath, quiet
     try:
-        with open(cpath, 'w') as configfile:    # save
-            config.write(configfile)
-    except:
-        print "Can't remove config: "+set
-        sys.exit(1)
-        
-def set_target(target, dir):
-    global homedir, cpath
-    list = conf_get("targets", [])
-    if not target in list:
-        list.append(target)
-    conf_set("targets", list)
-    conf_set("target_"+target, os.path.relpath(os.path.abspath(dir), homedir))
+        pull_dir(os.path.relpath(os.path.abspath(params[0]), homedir))
+    except IndexError:
+        pull_dir(os.path.relpath(".", homedir))
 
-def rm_target(target):
-    global homedir, cpath
-    list = conf_get("targets", [])
-    if target in list:
-        list.remove(target)
-    conf_set("targets", list)
-    conf_del("target_"+target)
-
-def get_target(target):
-    global homedir, cpath
-    return conf_get("target_"+target)
-
-def get_rcd():
-    return conf_get("rcd", "")
-def pull_dir(dir):
-    global homedir, cpath
-    spth = os.getcwd()
-    os.chdir(homedir)
-    dir = os.path.relpath(os.path.abspath(dir), homedir)
-    host = conf_get("host")
-    user = conf_get("user")
-    command = """
-open """+host+"""
-user """+user+"""
-lcd """+os.getcwd()+"""
-mirror --delete --verbose -x \\.fstconfig """+os.path.join(get_rcd(), dir)+""" """+dir+"""
-bye"""
-    call(["lftp", "-e", command])
-    os.chdir(spth)
-    
-def push_dir(dir):
-    global homedir, cpath
-    spth = os.getcwd()
-    os.chdir(homedir)
-    host = conf_get("host")
-    user = conf_get("user")
-    command = """
-open """+host+"""
-user """+user+"""
-lcd """+homedir+"""
-mirror --delete --verbose -x \\.fstconfig --reverse """+dir+""" """+os.path.join(get_rcd(), dir)+"""
-bye"""
-    call(["lftp", "-e", command])
-    os.chdir(spth)
-
-def config_option(params, option, default=None):
+# Push Command
+def cmd_push(*params): 
+    global homedir, cpath, quiet
     try:
-        conf_set(option, params[1])
-        print "'"+option+"' = '"+params[1]+"'"
-    except:
-       print conf_get(option, default)
-       sys.exit(1) 
+        push_dir(get_target(params[0]))
+    except IndexError:
+        push_dir(get_target("master"))
+
+# Push Dir Command
+def cmd_pushdir(*params):
+    global homedir, cpath, quiet
+    try:
+        push_dir(os.path.relpath(os.path.abspath(params[0]), homedir))
+    except IndexError:
+        push_dir(os.path.relpath(".", homedir))
+
+# pwd Command
+def cmd_pwd(*params):
+    global homedir, cpath, quiet
+    print os.path.relpath(os.path.abspath(os.getcwd()), homedir)
+
+# rcd Command
+def cmd_rcd(*params): 
+    config_option(params, "rcd", "")
+
+def cmd_status(*params):
+    print homedir
+
+def cmd_user(*params):
+    config_option(params, "user", "")
+
+#
+# Main
+#
+
 
 def main(params):
-    global homedir, cpath
+    global homedir, cpath, quiet, simulate
+    quiet = False
+    simulate = False
+
+    try:
+        if(params[0] == "--quiet" or params[0] == "-q"):
+            quiet = True
+            params = params[1:]
+        elif(params[0] == "--simulate" or params[0] == "-s"):
+            simulate = True
+            dump_message("** SIMULATE ** Will simulate only")
+            params = params[1:]
+    except:
+        pass
+    
+
     if len(params) > 0:
         oper = params[0]
-        if oper == "user":
-            config_option(params, "user")
-        elif oper == "host":
-            config_option(params, "host")
-        elif oper == "rcd":
-            config_option(params, "rcd", "")
-        elif oper == "fork":
-            try:
-                shutil.copy(cpath, os.path.join(os.getcwd(), ".fstconfig"))
-            except shutil.Error:
-                print "Can't fork: Config already in CD. "
-                sys.exit(1)
-            except IOError:
-                print "Can't fork: Nothing to fork. "
-                pass
-            rcd = os.path.join(conf_get("rcd", ""), os.path.relpath(os.path.abspath(os.getcwd()), homedir))
-            # Update all the directories
-            homedir = os.getcwd()
-            cpath = os.path.join(homedir, ".fstconfig")
-            #Update settings
-            conf_set("rcd", rcd)
-            print "Forked, 'rcd' = '"+rcd+"'"
-        elif oper == "clear":
-            try:
-                os.remove(cpath)
-                print "config cleared. "
-            except OSError:
-                print "Can't clear config (Empty config?)"
-                sys.exit(1)
-        elif oper == "target":
-            try:
-                set_target(params[1], params[2])
-                print "'target'['"+params[1]+"'] = '"+params[2]+"'"
-            except:
-                print "Missing parameter(s). "
-        elif oper == "rm":
-            try:
-                rm_target(params[1])
-                print "deleted 'target'['"+params[1]+"']"
-            except:
-                print "Missing parameter(s). "
-        elif oper == "pull":
-            try:
-                pull_dir(get_target(params[1]))
-            except:
-                pull_dir(".")
-        elif oper == "push":
-            try:
-                push_dir(get_target(params[1]))
-            except:
-                push_dir(".")
-        elif oper == "pulldir":
-            try:
-                pull_dir(os.path.relpath(os.path.abspath(params[1]), homedir))
-            except:
-                pull_dir(os.path.relpath(".", homedir))
-        elif oper == "pushdir":
-            try:
-                push_dir(os.path.relpath(os.path.abspath(params[1]), homedir))
-            except:
-                push_dir(os.path.relpath(".", homedir))
-            
-        elif oper == "which":
-            try:
-                print get_target(params[1])
-            except:
-                for key in conf_get("targets", []):
-                    print key
-        elif oper == "status":
-            print homedir
-        elif oper == "pwd":
-            print os.path.relpath(os.path.abspath(os.getcwd()), homedir)
-        elif oper == "help":
-            try:
-                help(params[1])
-            except:
-                help("")
-        elif oper == "about":
-            print "fst - FTP File Sync Tool"
-            print "(c) Tom Wiesing 2013"
+        params = params[1:]
+
+        name = "cmd_" + oper
+
+        if name in globals():
+            globals()[name](*params)
         else:
-            print "Unknown Command"
+            cmd_unknown()
     else:
-        print "Missing command. See 'fst help'. "
+        cmd_zero()
     
 if __name__ == '__main__':
     init_path()
     try:
         main(sys.argv[1:])
     except KeyboardInterrupt:
-        print "Error: KeyboardInterrupt"
+        die("KeyboardInterrupt")
         sys.exit(1)
