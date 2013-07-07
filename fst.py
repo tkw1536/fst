@@ -338,23 +338,28 @@ Displays help.
 Sets or displays the current host for the ftp connection. 
     $HOST    Host to set. 
 """,
-        "pull": """'fst pull $TARGET'
+        "pulltarget": """'fst pulltarget $TARGET'
 Pulls the specefied target. 
     $TARGET    Target to pull. 
 """,
-        "pulldir": """'fst pulldir [--no-recursion] [$DIR]'
+        "pull": """'fst pull [$STUFF [$STUFF ... ]]'
+Pulls directories or targets. 
+    $STUFF    Directory or target to pull. Directories take preference. 
+""",
+        "push": """'fst push [$STUFF [$STUFF ... ]]'
+Pulls directories or targets. 
+    $STUFF    Directory or target to push. Directories take preference. 
+""",
+        "pulldir": """'fst pulldir [$DIR]'
 Pulls the specefied directory, relative to the current directory. 
-    --no-recursion
-            Do not recurse into subdirectories. 
     $DIR    Directory to pull. Defaults to current directory. 
 """,
-        "push": """'fst push $TARGET'
+        "pushtarget": """'fst pushtarget $TARGET'
 Pushes the specefied target. 
     $TARGET    Target to push. 
 """,
         "pushdir": """'fst pushdir [$DIR] '
 Pushes the specefied directory, relative to the current directory. 
-    --no-recursion
             Do not recurse into subdirectories. 
     $DIR    Directory to push. Defaults to current directory. 
 """,
@@ -415,8 +420,10 @@ host
 include
 pull
 pulldir
+pulltarget
 push
-pushdir !
+pushdir
+pushtarget
 rcd
 status
 target
@@ -490,6 +497,19 @@ def cmd_target(*params):
 
 # Pull Command
 def cmd_pull(*params):
+    if(len(params) == 0):
+        pull_dir(get_target("master"))
+        return
+    for param in params:
+        if os.path.isdir(param):
+            cmd_pulldir(param)
+        else:
+            cmd_pulltarget(param)
+
+
+
+# Pull Target Command
+def cmd_pulltarget(*params):
     global homedir, cpath, quiet
     try:
         pull_dir(get_target(params[0]))
@@ -506,11 +526,14 @@ def cmd_pulldir(*params):
 
 # Push Command
 def cmd_push(*params): 
-    global homedir, cpath, quiet
-    try:
-        push_dir(get_target(params[0]))
-    except IndexError:
+    if(len(params) == 0):
         push_dir(get_target("master"))
+        return
+    for param in params:
+        if os.path.isdir(param):
+            cmd_pushdir(param)
+        else:
+            cmd_pushtarget(param)
 
 # Push Dir Command
 def cmd_pushdir(*params):
@@ -519,6 +542,14 @@ def cmd_pushdir(*params):
         push_dir(os.path.relpath(os.path.abspath(params[0]), homedir))
     except IndexError:
         push_dir(get_pwd())
+
+# Pull Target Command
+def cmd_pushtarget(*params): 
+    global homedir, cpath, quiet
+    try:
+        push_dir(get_target(params[0]))
+    except IndexError:
+        push_dir(get_target("master"))
 
 # pwd Command
 def cmd_pwd(*params):
