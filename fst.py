@@ -11,7 +11,6 @@ from subprocess import call
 def walk_up(bottom):
     #from: https://gist.github.com/zdavkeos/1098474
     bottom = os.path.realpath(bottom)
- 
     #get files in current dir
     try:
         names = os.listdir(bottom)
@@ -152,7 +151,7 @@ def config_array_option(params, option, map=lambda x: x, unmap=lambda x: x, defa
         if(params[0] == "list"):
             config_array_option_dump(option, unmap, default)
         elif (params[0] == "rm"): 
-            config_array_option_remove(option, params[1:], map, default)
+            config_array_option_remove("option", params[1:], map, default)
         elif (params[0] == "add"):
             config_array_option_add(option, params[1:], map, default)
         else:
@@ -196,7 +195,7 @@ def config_map_option(params, option, map=lambda x: x, unmap=lambda x: x, defaul
             else:
                 config_map_option_dump(option, unmap, default)
         elif (params[0] == "rm" or params[0] == "delete" or params[0] == "del"): 
-            config_array_option_remove(option, params[1:], default)
+            config_map_option_remove(option, params[1:], default)
         elif (params[0] == "add" or params[0] == "set"):
             if(len(params) > 2):
                 config_map_option_add(option, params[1], params[2], map, default)
@@ -227,7 +226,7 @@ def config_map_option_dump(option, unmap=lambda x: x, default={}, key=None):
     opt = conf_get(option, default)
     if key == None:
         for value in opt:
-            dump_message(unmap(opt[value]))
+            dump_message("'" + value + "': " + unmap(opt[value]))
     else:
         if key in opt:
             dump_message(unmap(opt[key]))
@@ -235,7 +234,7 @@ def config_map_option_dump(option, unmap=lambda x: x, default={}, key=None):
             die("Can't find '"+key+"' in '"+option+"'. ")
 #
 #   Getters
-#
+#""
 
 #Get a target if it exists
 def get_target(target):
