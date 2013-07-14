@@ -98,6 +98,7 @@ def conf_get(set, default=None):
         else:
             return default
 
+
 # Set a configuration
 def conf_set(set, val):
     global homedir, cpath
@@ -150,9 +151,9 @@ def config_array_option(params, option, map=lambda x: x, unmap=lambda x: x, defa
     if(len(params)>0):
         if(params[0] == "list"):
             config_array_option_dump(option, unmap, default)
-        elif (params[0] == "rm"): 
-            config_array_option_remove("option", params[1:], map, default)
-        elif (params[0] == "add"):
+        elif (params[0] == "rm" or params[0] == "remove" or params[0] == "off"): 
+            config_array_option_remove(option, params[1:], map, default)
+        elif (params[0] == "add" or params[0] == "on"):
             config_array_option_add(option, params[1:], map, default)
         else:
             die("Wrong parameter(s) for option '"+ option +"'")
@@ -255,13 +256,41 @@ def get_pwd():
     global homedir
     return os.path.relpath(os.path.abspath(os.getcwd()), homedir)
 
+def parse_flags(params): 
+    flags = conf_get("flags", default = ["recurse"])
+    flags = {
+        "force": "force" in flags, 
+        "recurse": "recurse" in flags, 
+        "continue": "continue" in flags
+    }
+    while (len(params) > 0):
+        if params[0] in ["--recurse", "--no-recurse", "-r", "-nr", "--continue", "--no-continue", "-c", "-nc", "--force", "--no-force", "-f", "-nf"]: 
+            setting = params[0]
+            params = params[1:]
+            if setting in ["--recurse", "-r"]:
+                flags["recurse"] = True
+            if setting in ["--no-recurse", "-nr"]:
+                flags["recurse"] = False
+            if setting in ["--continue", "-c"]:
+                flags["continue"] = True
+            if setting in ["--no-continue", "-nc"]:
+                flags["continue"] = False
+            if setting in ["--force", "-f"]:
+                flags["force"] = True
+            if setting in ["--no-force", "-nf"]:
+                flags["force"] = False
+        else:
+            break
+
+    return [flags, params] 
+
 
 #
 # Push / Pull Core Things
 #
 
 # Push a dir
-def pull_dir(dir):
+def pull_dir(dir, recurse=True, force=False, cont=False):
     global homedir, cpath
     spth = os.getcwd()
     os.chdir(homedir)
@@ -276,21 +305,34 @@ def pull_dir(dir):
     excludes = conf_get("exclude_file", [])
     for exc in excludes:
         fstring += "-x "+exc
+
+    flags = ""
+
+    if recurse != True:
+        flags += " --no-recursion"
+    if force != True: 
+        flags += " --only-newer"
+    if cont == True: 
+        flags += " --continue"
+
+    if(dump_simu("Pulling a directory")):
+        flags += " --dry-run"
 
     command = """
 open """+host+"""
 user """+user+"""
 lcd """+os.getcwd()+"""
-mirror --delete --verbose -x \\.fstconfig """+fstring+os.path.join(get_rcd(), dir)+""" """+dir+"""
+mirror """+flags+""" --delete --verbose -x \\.fstconfig """+fstring+os.path.join(get_rcd(), dir)+""" """+dir+"""
 bye"""
-    dump_simu("Pulling a directory")
+
     if(dump_simu(command)):
         return
+    
     call(["lftp", "-e", command])
     os.chdir(spth)
 
 # Pull a dir
-def push_dir(dir):
+def push_dir(dir, recurse=True, force=False, cont=False):
     global homedir, cpath
     spth = os.getcwd()
     os.chdir(homedir)
@@ -306,15 +348,28 @@ def push_dir(dir):
     for exc in excludes:
         fstring += "-x "+exc
 
+    flags = ""
+
+    if recurse != True:
+        flags += " --no-recursion"
+    if force != True: 
+        flags += " --only-newer"
+    if cont == True: 
+        flags += " --continue"
+
+    if(dump_simu("Pusshing a directory")):
+        flags += " --dry-run"
+
     command = """
 open """+host+"""
 user """+user+"""
 lcd """+homedir+"""
-mirror --delete --verbose -x \\.fstconfig """+fstring+""" --reverse """+dir+""" """+os.path.join(get_rcd(), dir)+"""
+mirror """+flags+""" --delete --verbose -x \\.fstconfig """+fstring+""" --reverse """+dir+""" """+os.path.join(get_rcd(), dir)+"""
 bye"""
-    dump_simu("Pushing a directory")
+    
     if(dump_simu(command)):
         return
+
     call(["lftp", "-e", command])
     os.chdir(spth)
 #
@@ -337,30 +392,36 @@ Displays help.
 Sets or displays the current host for the ftp connection. 
     $HOST    Host to set. 
 """,
-        "pulltarget": """'fst pulltarget $TARGET'
+        "pulltarget": """'fst pulltarget [$FLAGS] $TARGET'
 Pulls the specefied target. 
     $TARGET    Target to pull. 
+    $FLAGS     Flags to use, see 'fst help flags'
 """,
-        "pull": """'fst pull [$STUFF [$STUFF ... ]]'
+        "pull": """'fst pull [$FLAGS] [$STUFF [$STUFF ... ]]'
 Pulls directories or targets. 
     $STUFF    Directory or target to pull. Directories take preference. 
+    $FLAGS    Flags to use, see 'fst help flags'
 """,
-        "push": """'fst push [$STUFF [$STUFF ... ]]'
+        "push": """'fst push [$FLAGS] [$STUFF [$STUFF ... ]]'
 Pulls directories or targets. 
     $STUFF    Directory or target to push. Directories take preference. 
+    $FLAGS    Flags to use, see 'fst help flags'
 """,
-        "pulldir": """'fst pulldir [$DIR]'
+        "pulldir": """'fst pulldir [$FLAGS] [$DIR]'
 Pulls the specefied directory, relative to the current directory. 
     $DIR    Directory to pull. Defaults to current directory. 
+    $FLAGS  Flags to use, see 'fst help flags'
 """,
-        "pushtarget": """'fst pushtarget $TARGET'
+        "pushtarget": """'fst pushtarget [$FLAGS] $TARGET'
 Pushes the specefied target. 
     $TARGET    Target to push. 
+    $FLAGS     Flags to use, see 'fst help flags'
 """,
-        "pushdir": """'fst pushdir [$DIR] '
+        "pushdir": """'fst pushdir [$FLAGS] [$DIR] '
 Pushes the specefied directory, relative to the current directory. 
             Do not recurse into subdirectories. 
     $DIR    Directory to push. Defaults to current directory. 
+    $FLAGS  Flags to use, see 'fst help flags'
 """,
         "pwd": """'fst pwd'
 Prints the current directory relative to the directory root. 
@@ -388,13 +449,33 @@ Forces a configuration file in the current directory. Automatically calls fst rc
 Adds or removes files from the include list. 
     $FILE   File to include or exclude
     $FILE2  Another file 
-    ...
 """,
         "exclude": """'fst exclude add|remove|list [$FILE [$FILE2 ...]]'
 Adds or removes files from the exclude list. 
     $FILE   File to include or exclude
     $FILE2  Another file 
-    ...
+""",
+        "flags": """'fst flags [on|off] [recurse|continue|force]'
+Adds or removes default flags. 
+    $FLAGS  Flags to use. Supported are: 
+
+    --recurse,
+    --no-recurse, 
+    -nr,  
+    -r      Recurse into subdirectories. Enabled by default. 
+
+    --continue, 
+    --no-continue, 
+    -nc, 
+    -c      Continue interrupted transfer. Disabled by default. 
+
+    --force, 
+    --no-force, 
+    -nf
+    -f      Force to update all files, not only newer files. Disabled by default. 
+""",
+        "viewcfg": """'fst viewcfg'
+            Shows the current Configuration. Same as 'cat .fstconfig' in the the root directory. 
 """
     }.get(what, """fst - FTP File Sync Tool
 (c) Tom Wiesing 2013
@@ -413,6 +494,7 @@ Available commands:
 about
 clear
 exclude
+flags
 fork
 help
 host
@@ -427,6 +509,7 @@ rcd
 status
 target
 user
+viewcfg
 
 
 Type 'fst help COMMAND' for more information. """));
@@ -477,6 +560,14 @@ def cmd_fork(*args):
     conf_set("rcd", rcd)
     dump_message("Forked, 'rcd' = '"+rcd+"'")
 
+# Flags Command
+def cmd_flags(*params):
+    def flags_verify(f):
+        if not f in ["recurse", "continue", "force"]:
+            die("Unknown flag '"+f+"'")
+        else:
+            return f
+    config_array_option(params, "flags", map=flags_verify, default=["recurse"])
 
 # Host Command
 def cmd_host(*params):
@@ -496,59 +587,85 @@ def cmd_target(*params):
 
 # Pull Command
 def cmd_pull(*params):
+    [flags, params] = parse_flags(params)
     if(len(params) == 0):
-        pull_dir(get_target("master"))
+        pull_dir(get_target("master"), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
         return
     for param in params:
         if os.path.isdir(param):
-            cmd_pulldir(param)
+            cmd_pulldir(param, flags=flags)
         else:
-            cmd_pulltarget(param)
+            cmd_pulltarget(param, flags=flags)
 
 
 
 # Pull Target Command
-def cmd_pulltarget(*params):
+def cmd_pulltarget(*params, **f):
     global homedir, cpath, quiet
+
+    if "flags" in f:
+        flags = f["flags"]
+    else: 
+        [flags, params] = parse_flags(params)
+
     try:
-        pull_dir(get_target(params[0]))
+        pull_dir(get_target(params[0]), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
     except IndexError:
-        pull_dir(get_target("master"))
+        pull_dir(get_target("master"), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
 
 # Pull Dir Command
-def cmd_pulldir(*params):
+def cmd_pulldir(*params, **f):
     global homedir, cpath, quiet
+
+    if "flags" in f:
+        flags = f["flags"]
+    else: 
+        [flags, params] = parse_flags(params)
+
     try:
-        pull_dir(os.path.relpath(os.path.abspath(params[0]), homedir))
+        pull_dir(os.path.relpath(os.path.abspath(params[0]), homedir), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
     except IndexError:
-        pull_dir(get_pwd())
+        pull_dir(get_pwd(), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
 
 # Push Command
 def cmd_push(*params): 
+    [flags, params] = parse_flags(params)
     if(len(params) == 0):
-        push_dir(get_target("master"))
+        push_dir(get_target("master"), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
         return
     for param in params:
         if os.path.isdir(param):
-            cmd_pushdir(param)
+            cmd_pushdir(param, flags=flags)
         else:
-            cmd_pushtarget(param)
+            cmd_pushtarget(param, flags=flags)
 
 # Push Dir Command
-def cmd_pushdir(*params):
+def cmd_pushdir(*params, **f):
     global homedir, cpath, quiet
+
+    if "flags" in f:
+        flags = f["flags"]
+    else: 
+        [flags, params] = parse_flags(params)
+
     try:
-        push_dir(os.path.relpath(os.path.abspath(params[0]), homedir))
+        push_dir(os.path.relpath(os.path.abspath(params[0]), homedir), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
     except IndexError:
-        push_dir(get_pwd())
+        push_dir(get_pwd(), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
 
 # Pull Target Command
-def cmd_pushtarget(*params): 
+def cmd_pushtarget(*params, **f): 
     global homedir, cpath, quiet
+
+    if "flags" in f:
+        flags = f["flags"]
+    else: 
+        [flags, params] = parse_flags(params)
+
     try:
-        push_dir(get_target(params[0]))
+        push_dir(get_target(params[0]), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
     except IndexError:
-        push_dir(get_target("master"))
+        push_dir(get_target("master"), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
 
 # pwd Command
 def cmd_pwd(*params):
@@ -560,10 +677,15 @@ def cmd_rcd(*params):
     config_option(params, "rcd", "")
 
 def cmd_status(*params):
+    global homedir, cpath, quiet
     print homedir
 
 def cmd_user(*params):
     config_option(params, "user", "")
+
+def cmd_viewcfg(*params): 
+    global homedir, cpath, quiet
+    call(["cat", cpath])
 
 #
 # Main
