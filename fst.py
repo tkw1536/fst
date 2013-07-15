@@ -541,7 +541,7 @@ def cmd_clear(*args):
 # Exclude command
 def cmd_exclude(*args):
     global homedir, cpath, quiet
-    config_array_option(params, "exclude_file", map=re.escape)
+    config_array_option(args, "exclude_file", map=re.escape)
 
 # Fork Command
 def cmd_fork(*args):
