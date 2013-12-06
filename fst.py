@@ -289,7 +289,7 @@ def parse_flags(params):
 # Push / Pull Core Things
 #
 
-# Push a dir
+# Pull a dir
 def pull_dir(dir, recurse=True, force=False, cont=False):
     global homedir, cpath
     spth = os.getcwd()
@@ -322,6 +322,7 @@ def pull_dir(dir, recurse=True, force=False, cont=False):
 open """+host+"""
 user """+user+"""
 lcd """+os.getcwd()+"""
+"""+fstring+"""
 mirror """+flags+""" --delete --verbose -x \\.fstconfig """+fstring+os.path.join(get_rcd(), dir)+""" """+dir+"""
 bye"""
 
@@ -331,7 +332,7 @@ bye"""
     call(["lftp", "-e", command])
     os.chdir(spth)
 
-# Pull a dir
+# Push a dir
 def push_dir(dir, recurse=True, force=False, cont=False):
     global homedir, cpath
     spth = os.getcwd()
@@ -357,7 +358,7 @@ def push_dir(dir, recurse=True, force=False, cont=False):
     if cont == True: 
         flags += " --continue"
 
-    if(dump_simu("Pusshing a directory")):
+    if(dump_simu("Pushing a dir")):
         flags += " --dry-run"
 
     command = """
@@ -366,12 +367,117 @@ user """+user+"""
 lcd """+homedir+"""
 mirror """+flags+""" --delete --verbose -x \\.fstconfig """+fstring+""" --reverse """+dir+""" """+os.path.join(get_rcd(), dir)+"""
 bye"""
+
+    if(dump_simu(command)):
+        return
+
+    call(["lftp", "-e", command])
+    os.chdir(spth)
+
+# Push a file
+def push_file(dir):
+    global homedir, cpath
+    spth = os.getcwd()
+    os.chdir(homedir)
+    dir = os.path.relpath(os.path.abspath(dir), homedir)
+    host = conf_get("host")
+    user = conf_get("user")
+
+    dump_simu("Pushing a file. ")
+
+    command = """
+open """+host+"""
+user """+user+"""
+lcd """+homedir+"""
+put -c """+dir+""" """+os.path.join(get_rcd(), dir)+"""
+bye"""
+
+    if(dump_simu(command)):
+        return
+
+    call(["lftp", "-e", command])
+    os.chdir(spth)
+
+# Pulling a file
+def pull_file(dir):
+    global homedir, cpath
+    spth = os.getcwd()
+    os.chdir(homedir)
+    dir = os.path.relpath(os.path.abspath(dir), homedir)
+    host = conf_get("host")
+    user = conf_get("user")
+
+    dump_simu("Pulling a file. ")
+
+    command = """
+open """+host+"""
+user """+user+"""
+lcd """+homedir+"""
+get -c """+os.path.join(get_rcd(), dir)+""" """+dir+"""
+bye"""
+
+    if(dump_simu(command)):
+        return
+
+    call(["lftp", "-e", command])
+    os.chdir(spth)
+
+# Removing stuff
+def rm_remote(dir, isd):
+    global homedir, cpath
+    spth = os.getcwd()
+    os.chdir(homedir)
+    dir = os.path.relpath(os.path.abspath(dir), homedir)
+    host = conf_get("host")
+    user = conf_get("user")
+
+    dump_simu("Deleting something. ")
+
+    command = """
+open """+host+"""
+user """+user+"""
+lcd """+homedir+"""
+rm """+("-r " if isd else " ")+os.path.join(get_rcd(), dir)+"""
+bye"""
+
+    if(dump_simu(command)):
+        return
+
+    call(["lftp", "-e", command])
+    os.chdir(spth)
+
+
+def status_path(dir, l):
+    global homedir, cpath
+    spth = os.getcwd()
+    os.chdir(homedir)
+    dir = os.path.relpath(os.path.abspath(dir), homedir)
+    host = conf_get("host")
+    user = conf_get("user")
+
+
+    if(dump_simu("Querying path: " + dir)):
+        return
+
+    command = """
+open """+host+"""
+user """+user
+
+    if l:
+        command +="""
+find """+os.path.join(get_rcd(), dir)+"""
+bye"""
+    else:
+        command +="""
+ls """+os.path.join(get_rcd(), dir)+"""
+bye"""
     
     if(dump_simu(command)):
         return
 
     call(["lftp", "-e", command])
     os.chdir(spth)
+
 #
 # Commands
 #
@@ -407,9 +513,22 @@ Pulls directories or targets.
     $STUFF    Directory or target to push. Directories take preference. 
     $FLAGS    Flags to use, see 'fst help flags'
 """,
+        "rm": """'fst rm $FILE'
+Removes a remote file.  
+    $FILE File to remove. 
+""",
+        "rmd": """'fst rmr $DIR'
+Removes a directory recursively
+    $DIR Directory to remove. 
+""",
         "pulldir": """'fst pulldir [$FLAGS] [$DIR]'
 Pulls the specefied directory, relative to the current directory. 
     $DIR    Directory to pull. Defaults to current directory. 
+    $FLAGS  Flags to use, see 'fst help flags'
+""",
+        "pullfile": """'fst pullfile [$FLAGS] $FILE'
+Pulls the specefied file, relative to the current directory. 
+    $FILE   File to pull. 
     $FLAGS  Flags to use, see 'fst help flags'
 """,
         "pushtarget": """'fst pushtarget [$FLAGS] $TARGET'
@@ -419,15 +538,29 @@ Pushes the specefied target.
 """,
         "pushdir": """'fst pushdir [$FLAGS] [$DIR] '
 Pushes the specefied directory, relative to the current directory. 
-            Do not recurse into subdirectories. 
     $DIR    Directory to push. Defaults to current directory. 
+    $FLAGS  Flags to use, see 'fst help flags'
+""",
+        "pushfile": """'fst pushfile [$FLAGS] $FILE'
+Pushes the specefied file, relative to the current directory. 
+    $FILE   File to push. 
     $FLAGS  Flags to use, see 'fst help flags'
 """,
         "pwd": """'fst pwd'
 Prints the current directory relative to the directory root. 
 """,
-        "status": """'fst status'
+        "lcd": """'fst lcd'
 Prints the current directory root. 
+""",
+        "status": """'fst status [$PATH]'
+Prints all files currently located in $PATH in the remote. 
+Similar to 'find $PATH' on *nix systems. 
+    $PATH   Path to use. Defaults to current path. 
+""",
+        "ls": """'fst ls [$PATH]'
+Lists all files currently located in $PATH in the remote. 
+Similar to 'ls $PATH' on *nix systems. 
+    $PATH   Path to use. Defaults to current path. 
 """,
         "target": """'fst target [set|get|del] $NAME [$DIR]'
 Creates or updates a target. 
@@ -454,6 +587,9 @@ Adds or removes files from the include list.
 Adds or removes files from the exclude list. 
     $FILE   File to include or exclude
     $FILE2  Another file 
+""",
+         "simulate": """'fst simulate [on|off|status]'
+Activates or deactivates always-simulate. 
 """,
         "flags": """'fst flags [on|off] [recurse|continue|force]'
 Adds or removes default flags. 
@@ -499,13 +635,20 @@ fork
 help
 host
 include
+lcd
+ls
 pull
 pulldir
+pullfile
 pulltarget
 push
 pushdir
+pushfile
 pushtarget
 rcd
+rm
+rmd
+simulate
 status
 target
 user
@@ -516,7 +659,7 @@ Type 'fst help COMMAND' for more information. """));
 
 # Without parameters
 def cmd_zero():
-    die("Missing operator. \n Usage: fst [--quiet|--simulate] about|clear|exclude|fork|help|host|include|pull|pulldir|push|pushdir|pwd|rcd|status|target|user")
+    die("Missing operator. \n Usage: fst [--quiet|--simulate] about|clear|exclude|fork|help|host|include|lcd|ls|pull[dir|file|target]|push[dir|file|target]|pwd|rcd|rm[d]|simulate|status|target|user")
 
 
 # Called unknown command
@@ -594,6 +737,8 @@ def cmd_pull(*params):
     for param in params:
         if os.path.isdir(param):
             cmd_pulldir(param, flags=flags)
+        elif os.path.isfile(param):
+            cmd_pullfile(param, flags=flags)
         else:
             cmd_pulltarget(param, flags=flags)
 
@@ -636,6 +781,8 @@ def cmd_push(*params):
     for param in params:
         if os.path.isdir(param):
             cmd_pushdir(param, flags=flags)
+        elif os.path.isfile(param):
+            cmd_pushfile(param, flags=flags)
         else:
             cmd_pushtarget(param, flags=flags)
 
@@ -653,7 +800,26 @@ def cmd_pushdir(*params, **f):
     except IndexError:
         push_dir(get_pwd(), recurse=flags["recurse"], force=flags["force"], cont=flags["continue"])
 
-# Pull Target Command
+# Push File Command
+def cmd_pushfile(*params, **f):
+    global homedir, cpath, quiet
+
+    try:
+        push_file(os.path.relpath(os.path.abspath(params[0]), homedir))
+    except IndexError:
+        dump_error("No file given. ")
+
+
+def cmd_pullfile(*params, **f):
+    global homedir, cpath, quiet
+
+    try:
+        pull_file(os.path.relpath(os.path.abspath(params[0]), homedir))
+    except IndexError:
+        dump_error("No file given. ")
+
+
+# Push Target Command
 def cmd_pushtarget(*params, **f): 
     global homedir, cpath, quiet
 
@@ -672,13 +838,43 @@ def cmd_pwd(*params):
     global homedir, cpath, quiet
     print os.path.relpath(os.path.abspath(os.getcwd()), homedir)
 
+def cmd_rm(pth  = None, *params):
+    global homedir
+    if pth == None:
+        return dump_error("Nothing to delete: All is fine. ")
+    rm_remote(os.path.relpath(os.path.abspath(pth), homedir), False)
+
+def cmd_rmd(pth  = None, *params):
+    global homedir
+    if pth == None:
+        return dump_error("Nothing to delete: All is fine. ")
+    rm_remote(os.path.relpath(os.path.abspath(pth), homedir), True)
+
 # rcd Command
 def cmd_rcd(*params): 
     config_option(params, "rcd", "")
 
-def cmd_status(*params):
+def cmd_simulate(on_off = "status", *params):
+    if on_off == "on":
+        dump_message("** SIMULATE ** Always simulate on. ")
+        conf_set("simulate", True)
+    elif on_off == "off":
+        dump_message("** SIMULATE ** Always simulate off. ")
+        conf_set("simulate", False)
+    elif on_off == "status":
+        print conf_get("simulate", False)
+    else:
+        dump_error("Unknown parameter. ")
+
+def cmd_lcd(*params):
     global homedir, cpath, quiet
     print homedir
+def cmd_ls(pth = ".", *params):
+    pth = os.path.relpath(os.path.abspath(pth), homedir)
+    status_path(pth, False)
+def cmd_status(pth = ".", *params):
+    pth = os.path.relpath(os.path.abspath(pth), homedir)
+    status_path(pth, True)
 
 def cmd_user(*params):
     config_option(params, "user", "")
@@ -707,6 +903,8 @@ def main(params):
             params = params[1:]
     except:
         pass
+
+    simulate = simulate or conf_get("simulate", False)
     
 
     if len(params) > 0:
