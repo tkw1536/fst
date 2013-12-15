@@ -291,7 +291,7 @@ def parse_flags(params):
 
 # Pull a dir
 def pull_dir(dir, recurse=True, force=False, cont=False):
-    global homedir, cpath
+    global homedir, cpath, lftp_hacks
     spth = os.getcwd()
     os.chdir(homedir)
     dir = os.path.relpath(os.path.abspath(dir), homedir)
@@ -301,10 +301,10 @@ def pull_dir(dir, recurse=True, force=False, cont=False):
     fstring = ""
     includes = conf_get("include_file", [])
     for inc in includes:
-        fstring += "-i "+inc
+        fstring += " -i "+inc
     excludes = conf_get("exclude_file", [])
     for exc in excludes:
-        fstring += "-x "+exc
+        fstring += " -x "+exc
 
     flags = ""
 
@@ -318,12 +318,11 @@ def pull_dir(dir, recurse=True, force=False, cont=False):
     if(dump_simu("Pulling a directory")):
         flags += " --dry-run"
 
-    command = """
+    command = lftp_hacks + """
 open """+host+"""
 user """+user+"""
 lcd """+os.getcwd()+"""
-"""+fstring+"""
-mirror """+flags+""" --delete --verbose -x \\.fstconfig """+fstring+os.path.join(get_rcd(), dir)+""" """+dir+"""
+mirror """+flags+""" --delete --verbose -x \\.fstconfig"""+fstring+""" """+os.path.join(get_rcd(), dir)+""" """+dir+"""
 bye"""
 
     if(dump_simu(command)):
@@ -344,10 +343,10 @@ def push_dir(dir, recurse=True, force=False, cont=False):
     fstring = ""
     includes = conf_get("include_file", [])
     for inc in includes:
-        fstring += "-i "+inc
+        fstring += " -i "+inc
     excludes = conf_get("exclude_file", [])
     for exc in excludes:
-        fstring += "-x "+exc
+        fstring += " -x "+exc
 
     flags = ""
 
@@ -361,7 +360,7 @@ def push_dir(dir, recurse=True, force=False, cont=False):
     if(dump_simu("Pushing a dir")):
         flags += " --dry-run"
 
-    command = """
+    command = lftp_hacks + """
 open """+host+"""
 user """+user+"""
 lcd """+homedir+"""
@@ -376,7 +375,7 @@ bye"""
 
 # Push a file
 def push_file(dir):
-    global homedir, cpath
+    global homedir, cpath, lftp_hacks
     spth = os.getcwd()
     os.chdir(homedir)
     dir = os.path.relpath(os.path.abspath(dir), homedir)
@@ -385,11 +384,11 @@ def push_file(dir):
 
     dump_simu("Pushing a file. ")
 
-    command = """
+    command = lftp_hacks + """
 open """+host+"""
 user """+user+"""
 lcd """+homedir+"""
-put -c """+dir+""" """+os.path.join(get_rcd(), dir)+"""
+put -c """+dir+""" -o """+os.path.join(get_rcd(), dir)+"""
 bye"""
 
     if(dump_simu(command)):
@@ -400,7 +399,7 @@ bye"""
 
 # Pulling a file
 def pull_file(dir):
-    global homedir, cpath
+    global homedir, cpath, lftp_hacks
     spth = os.getcwd()
     os.chdir(homedir)
     dir = os.path.relpath(os.path.abspath(dir), homedir)
@@ -409,11 +408,11 @@ def pull_file(dir):
 
     dump_simu("Pulling a file. ")
 
-    command = """
+    command = lftp_hacks + """
 open """+host+"""
 user """+user+"""
 lcd """+homedir+"""
-get -c """+os.path.join(get_rcd(), dir)+""" """+dir+"""
+get -c """+os.path.join(get_rcd(), dir)+""" -o """+dir+"""
 bye"""
 
     if(dump_simu(command)):
@@ -433,7 +432,7 @@ def rm_remote(dir, isd):
 
     dump_simu("Deleting something. ")
 
-    command = """
+    command = lftp_hacks + """
 open """+host+"""
 user """+user+"""
 lcd """+homedir+"""
@@ -448,18 +447,14 @@ bye"""
 
 
 def status_path(dir, l):
-    global homedir, cpath
+    global homedir, cpath, lftp_hacks
     spth = os.getcwd()
     os.chdir(homedir)
     dir = os.path.relpath(os.path.abspath(dir), homedir)
     host = conf_get("host")
     user = conf_get("user")
 
-
-    if(dump_simu("Querying path: " + dir)):
-        return
-
-    command = """
+    command = lftp_hacks + """
 open """+host+"""
 user """+user
 
@@ -562,6 +557,11 @@ Lists all files currently located in $PATH in the remote.
 Similar to 'ls $PATH' on *nix systems. 
     $PATH   Path to use. Defaults to current path. 
 """,
+        "ls": """'fst lsl [$PATH]'
+Lists all files currently located in $PATH locally. 
+Equivalent to 'ls -l $PATH' on *nix systems. 
+    $PATH   Path to use. Defaults to current path. 
+""",
         "target": """'fst target [set|get|del] $NAME [$DIR]'
 Creates or updates a target. 
     $NAME   Name of target to create or update. 
@@ -637,6 +637,7 @@ host
 include
 lcd
 ls
+lsl
 pull
 pulldir
 pullfile
@@ -659,7 +660,7 @@ Type 'fst help COMMAND' for more information. """));
 
 # Without parameters
 def cmd_zero():
-    die("Missing operator. \n Usage: fst [--quiet|--simulate] about|clear|exclude|fork|help|host|include|lcd|ls|pull[dir|file|target]|push[dir|file|target]|pwd|rcd|rm[d]|simulate|status|target|user")
+    die("Missing operator. \n Usage: fst [--quiet|--simulate] about|clear|exclude|fork|help|host|include|lcd|ls[l]|pull[dir|file|target]|push[dir|file|target]|pwd|rcd|rm[d]|simulate|status|target|user")
 
 
 # Called unknown command
@@ -872,6 +873,8 @@ def cmd_lcd(*params):
 def cmd_ls(pth = ".", *params):
     pth = os.path.relpath(os.path.abspath(pth), homedir)
     status_path(pth, False)
+def cmd_lsl(pth = ".", *params):
+    call(["ls", "-l", pth])
 def cmd_status(pth = ".", *params):
     pth = os.path.relpath(os.path.abspath(pth), homedir)
     status_path(pth, True)
@@ -889,9 +892,11 @@ def cmd_viewcfg(*params):
 
 
 def main(params):
-    global homedir, cpath, quiet, simulate
+    global homedir, cpath, quiet, simulate, lftp_hacks
     quiet = False
     simulate = False
+
+    lftp_hacks = """set cmd:move-background false"""
 
     try:
         if(params[0] == "--quiet" or params[0] == "-q"):
